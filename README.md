@@ -16,14 +16,14 @@ A secure peer-to-peer chatroom CLI built on [Korium's](https://korium.io) adapti
 ### Via Homebrew (macOS/Linux)
 
 ```bash
-brew tap flavioaiello/six7
+brew tap six7chat/six7
 brew install six7
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/flavioaiello/homebrew-six7.git
+git clone https://github.com/six7chat/homebrew-six7.git
 cd homebrew-six7
 cargo install --path .
 ```
@@ -31,7 +31,7 @@ cargo install --path .
 ### Using Cargo
 
 ```bash
-cargo install --git https://github.com/flavioaiello/homebrew-six7.git
+cargo install --git https://github.com/six7chat/homebrew-six7.git
 ```
 
 ## Usage

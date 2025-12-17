@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Flavio Aiello"]
 description = "A secure peer-to-peer chatroom CLI built on Korium's adaptive networking fabric"
 license = "MIT"
-repository = "https://github.com/flavioaiello/homebrew-six7"
+repository = "https://github.com/six7chat/homebrew-six7"
 keywords = ["chat", "p2p", "networking", "pubsub", "korium"]
 categories = ["command-line-utilities", "network-programming"]
 
