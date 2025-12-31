@@ -14,6 +14,9 @@ use tokio::sync::RwLock;
 
 use korium::Node;
 
+/// The version of the korium dependency
+const KORIUM_VERSION: &str = "0.6.22";
+
 /// A secure peer-to-peer chatroom built on Korium's adaptive networking fabric
 #[derive(Parser, Debug)]
 #[command(name = "six7")]
@@ -70,6 +73,7 @@ fn print_banner(args: &Args, display_addr: &str, identity: &str) {
     println!();
     println!("╔════════════════════════════════════════════════════════════════╗");
     println!("║                     six7 Chatroom                              ║");
+    println!("║                     powered by korium {:<24} ║", KORIUM_VERSION);
     println!("╠════════════════════════════════════════════════════════════════╣");
     println!("║ Nickname : {:<52} ║", args.name);
     println!("║ Room     : {:<52} ║", args.room);
