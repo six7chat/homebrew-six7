@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 use korium::Node;
 
 /// The version of the korium dependency
-const KORIUM_VERSION: &str = "0.6.22";
+const KORIUM_VERSION: &str = "0.6.23";
 
 /// A secure peer-to-peer chatroom built on Korium's adaptive networking fabric
 #[derive(Parser, Debug)]
