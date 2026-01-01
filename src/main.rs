@@ -66,13 +66,12 @@ impl std::fmt::Display for MessageType {
 
 /// Direct Chat Message (RPC)
 /// Used for 1:1 direct messages between peers
+/// Note: Sender identity is authenticated by Korium transport layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DirectMessage {
     /// UUID v4 unique message identifier
     pub id: String,
-    /// 64-character hex Ed25519 public key of sender
-    pub from: String,
     /// Message content (JSON-escaped)
     pub content: String,
     /// Unix epoch milliseconds
@@ -82,35 +81,32 @@ pub struct DirectMessage {
 }
 
 impl DirectMessage {
-    pub fn new(from: &str, content: &str, message_type: MessageType) -> Self {
+    pub fn new(content: &str, message_type: MessageType) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
-            from: from.to_string(),
             content: content.to_string(),
             timestamp: current_timestamp_ms(),
             message_type: message_type.to_string(),
         }
     }
 
-    pub fn text(from: &str, content: &str) -> Self {
-        Self::new(from, content, MessageType::Text)
+    pub fn text(content: &str) -> Self {
+        Self::new(content, MessageType::Text)
     }
 
-    pub fn contact_request(from: &str, display_name: &str) -> Self {
-        Self::new(from, display_name, MessageType::ContactRequest)
+    pub fn contact_request(display_name: &str) -> Self {
+        Self::new(display_name, MessageType::ContactRequest)
     }
 
-    pub fn contact_accepted(from: &str, display_name: &str) -> Self {
-        Self::new(from, display_name, MessageType::ContactAccepted)
+    pub fn contact_accepted(display_name: &str) -> Self {
+        Self::new(display_name, MessageType::ContactAccepted)
     }
 
-    pub fn read_receipt(from: &str, message_ids: &[&str]) -> Self {
-        let timestamp = current_timestamp_ms();
+    pub fn read_receipt(message_ids: &[&str]) -> Self {
         Self {
-            id: format!("rr-{}", timestamp),
-            from: from.to_string(),
+            id: format!("rr-{}", current_timestamp_ms()),
             content: message_ids.join(","),
-            timestamp,
+            timestamp: current_timestamp_ms(),
             message_type: MessageType::ReadReceipt.to_string(),
         }
     }
@@ -118,13 +114,12 @@ impl DirectMessage {
 
 /// Group Message (PubSub)
 /// Topic: six7-group:{groupId}
+/// Note: Sender identity is authenticated by Korium transport layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupMessage {
     /// UUID v4 unique message identifier
     pub id: String,
-    /// 64-character hex sender identity
-    pub from: String,
     /// Message content (JSON-escaped)
     pub content: String,
     /// Unix epoch milliseconds
@@ -134,10 +129,9 @@ pub struct GroupMessage {
 }
 
 impl GroupMessage {
-    pub fn new(from: &str, content: &str, group_id: &str) -> Self {
+    pub fn new(content: &str, group_id: &str) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
-            from: from.to_string(),
             content: content.to_string(),
             timestamp: current_timestamp_ms(),
             group_id: group_id.to_string(),
@@ -378,9 +372,10 @@ async fn main() -> Result<()> {
                 }
 
                 // Try to parse as JSON GroupMessage first, fall back to legacy format
+                // Note: sender_id comes from Korium's authenticated transport, not the message payload
                 let (sender_name, display_content) = match serde_json::from_slice::<GroupMessage>(&msg.data) {
                     Ok(group_msg) => {
-                        // JSON protocol message
+                        // JSON protocol message - use Korium-authenticated sender_id
                         let name = {
                             let peers = peers_for_pubsub.read().await;
                             peers.get(&sender_id[..8]).cloned()
@@ -615,7 +610,7 @@ async fn main() -> Result<()> {
             }
 
             // Create JSON DirectMessage per protocol
-            let dm = DirectMessage::text(&identity, message);
+            let dm = DirectMessage::text(message);
             let dm_payload = serde_json::to_vec(&dm).expect("Failed to serialize message");
 
             match node.send(peer_identity, dm_payload).await {
@@ -659,7 +654,7 @@ async fn main() -> Result<()> {
             }
 
             // Create JSON ContactRequest per protocol
-            let request = DirectMessage::contact_request(&identity, &args.name);
+            let request = DirectMessage::contact_request(&args.name);
             let payload = serde_json::to_vec(&request).expect("Failed to serialize contact request");
 
             match node.send(peer_identity, payload).await {
@@ -684,7 +679,8 @@ async fn main() -> Result<()> {
 
         // Regular message - broadcast to room using JSON GroupMessage format
         // Note: For the chatroom, we use the room name as group_id for simplicity
-        let group_msg = GroupMessage::new(&identity, line, &args.room);
+        // Sender identity is authenticated by Korium at the transport layer
+        let group_msg = GroupMessage::new(line, &args.room);
         let json_payload = serde_json::to_vec(&group_msg).expect("Failed to serialize message");
         let formatted = format!("{}@{}: {}", args.name, my_id_prefix, line);
 
