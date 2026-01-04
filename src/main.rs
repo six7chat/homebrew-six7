@@ -21,7 +21,7 @@ use uuid::Uuid;
 use korium::Node;
 
 /// The version of the korium dependency
-const KORIUM_VERSION: &str = "0.7.0";
+const KORIUM_VERSION: &str = "0.7.1";
 
 // ============================================================================
 // Six7 Message Protocol v1.0
