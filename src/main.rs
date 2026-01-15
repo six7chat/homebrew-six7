@@ -315,7 +315,7 @@ async fn main() -> Result<()> {
 
     // Bind node to address
     let bind_addr = format!("0.0.0.0:{}", args.port);
-    let node = Arc::new(Node::bind(&bind_addr).await?);
+    let node = Arc::new(Node::builder(&bind_addr).build().await?);
 
     let local_addr = node.local_addr()?;
     let routable_addrs = node.routable_addresses();
