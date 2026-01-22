@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -606,8 +606,8 @@ async fn main() -> Result<()> {
             let dm = DirectMessage::text(message);
             let dm_payload = serde_json::to_vec(&dm).expect("Failed to serialize message");
 
-            match node.send(peer_identity, dm_payload).await {
-                Ok(response) => {
+            match tokio::time::timeout(Duration::from_secs(10), node.send(peer_identity, dm_payload)).await {
+                Ok(Ok(response)) => {
                     // Try to parse JSON ACK response
                     let ack_status = match serde_json::from_slice::<AckResponse>(&response) {
                         Ok(ack) if ack.ack => "✓",
@@ -623,8 +623,11 @@ async fn main() -> Result<()> {
                         ack_status
                     );
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     eprintln!("\x1b[31m[dm error]\x1b[0m Failed to send: {e}");
+                }
+                Err(_) => {
+                    eprintln!("\x1b[31m[dm error]\x1b[0m Timeout: peer unreachable");
                 }
             }
             continue;
@@ -650,8 +653,8 @@ async fn main() -> Result<()> {
             let request = DirectMessage::contact_request(&args.name);
             let payload = serde_json::to_vec(&request).expect("Failed to serialize contact request");
 
-            match node.send(peer_identity, payload).await {
-                Ok(response) => {
+            match tokio::time::timeout(Duration::from_secs(10), node.send(peer_identity, payload)).await {
+                Ok(Ok(response)) => {
                     let ack_status = match serde_json::from_slice::<AckResponse>(&response) {
                         Ok(ack) if ack.ack => "sent",
                         _ => "sent (legacy peer)",
@@ -663,8 +666,11 @@ async fn main() -> Result<()> {
                         ack_status
                     );
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     eprintln!("\x1b[31m[contact error]\x1b[0m Failed to send request: {e}");
+                }
+                Err(_) => {
+                    eprintln!("\x1b[31m[contact error]\x1b[0m Timeout: peer unreachable");
                 }
             }
             continue;
