@@ -2,7 +2,7 @@ class Six7 < Formula
   desc "Secure peer-to-peer chatroom CLI built on Korium's adaptive networking fabric"
   homepage "https://github.com/six7chat/homebrew-six7"
   url "https://github.com/six7chat/homebrew-six7/archive/refs/tags/v0.6.10.tar.gz"
-  sha256 "102ca43855688bc9d18439c1446d1f73f5b638408268ef259b61adbfff68d008"
+  sha256 "988e503018ec960662d1452cd7adcdf2a1b2a9d814f677cb80238abdfe270605"
   license "MIT"
   head "https://github.com/six7chat/homebrew-six7.git", branch: "main"
 
