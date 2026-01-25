@@ -496,24 +496,28 @@ async fn main() -> Result<()> {
 
         if line == "/fabric" {
             let fabric = node.fabric();
-            let all_peers = fabric.all_peers();
-            let connected_count = fabric.connected_contacts().len();
-            if all_peers.is_empty() {
+            let all_contacts = fabric.all_contacts();
+            let connected_contacts = fabric.connected_contacts();
+            if all_contacts.is_empty() {
                 println!("Fabric is empty (no known peers).");
             } else {
                 println!(
                     "Fabric ({} peers, {} connected):",
-                    all_peers.len(),
-                    connected_count
+                    all_contacts.len(),
+                    connected_contacts.len()
                 );
-                for peer in all_peers {
-                    let id_hex = hex::encode(peer.contact.identity.as_bytes());
-                    let status = if peer.is_connected() {
+                let connected_ids: std::collections::HashSet<_> = connected_contacts
+                    .iter()
+                    .map(|c| hex::encode(c.identity.as_bytes()))
+                    .collect();
+                for contact in all_contacts {
+                    let id_hex = hex::encode(contact.identity.as_bytes());
+                    let status = if connected_ids.contains(&id_hex) {
                         "\x1b[32mconnected\x1b[0m"
                     } else {
                         "\x1b[31mdisconnected\x1b[0m"
                     };
-                    println!("  {} [{}] {:?}", id_hex, status, peer.contact.addrs);
+                    println!("  {} [{}] {:?}", id_hex, status, contact.addrs);
                 }
             }
             continue;
