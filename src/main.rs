@@ -495,9 +495,8 @@ async fn main() -> Result<()> {
         }
 
         if line == "/fabric" {
-            let fabric = node.fabric();
-            let all_contacts = fabric.all_contacts();
-            let connected_contacts = fabric.connected_contacts();
+            let all_contacts = node.all_contacts();
+            let connected_contacts = node.connected_contacts();
             if all_contacts.is_empty() {
                 println!("Fabric is empty (no known peers).");
             } else {
