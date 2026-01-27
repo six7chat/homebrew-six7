@@ -307,9 +307,15 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    // Bind node to address
+    // Bind node to address (includes PoW mining which takes time)
     let bind_addr = format!("0.0.0.0:{}", args.port);
+    
+    print!("Mining identity (PoW)... ");
+    std::io::Write::flush(&mut std::io::stdout()).ok();
+    
     let node = Arc::new(Node::builder(&bind_addr).build().await?);
+    
+    println!("done!");
 
     let local_addr = node.local_addr()?;
     let routable_addrs = node.routable_addresses();
