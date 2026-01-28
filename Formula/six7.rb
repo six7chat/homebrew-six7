@@ -7,7 +7,7 @@ class Six7 < Formula
   on_macos do
     on_arm do
       url "https://github.com/six7chat/homebrew-six7/releases/download/v0.7.6/six7-0.7.6-arm64-apple-darwin.tar.gz"
-      sha256 "c57c0d00005f97776df225fc503bd3133d9a290807053f114e111b10b4668457"
+      sha256 "136a4c19c0076a0c5b1a845da786d3f9822cc01d9753996c4b2c021758d9d03e"
     end
   end
 
