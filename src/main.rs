@@ -20,9 +20,6 @@ use uuid::Uuid;
 
 use korium::Node;
 
-/// The version of the korium dependency
-const KORIUM_VERSION: &str = "0.7.1";
-
 // ============================================================================
 // Six7 Message Protocol v1.0
 // ============================================================================
@@ -267,8 +264,7 @@ fn parse_bootstrap(s: &str) -> Result<(SocketAddr, String)> {
 fn print_banner(args: &Args, display_addr: &str, identity: &str) {
     println!();
     println!("╔════════════════════════════════════════════════════════════════╗");
-    println!("║                     six7 Chatroom                              ║");
-    println!("║                     powered by korium {:<24} ║", KORIUM_VERSION);
+    println!("║                              six7                              ║");
     println!("╠════════════════════════════════════════════════════════════════╣");
     println!("║ Nickname : {:<52} ║", args.name);
     println!("║ Room     : {:<52} ║", args.room);
