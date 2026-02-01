@@ -373,8 +373,8 @@ async fn main() -> Result<()> {
                         let name = {
                             let peers = peers_for_pubsub.read().await;
                             peers.get(&sender_id[..8]).cloned()
-                        }.unwrap_or_else(|| format!("{}...", &sender_id[..8]));
-                        (name.clone(), format!("{}@{}: {}", name, &sender_id[..8], group_msg.content))
+                        }.unwrap_or_else(|| sender_id.clone());
+                        (name.clone(), format!("{}@{}: {}", name, sender_id, group_msg.content))
                     }
                     Err(_) => {
                         // Legacy format: "name@id_prefix: message"
@@ -383,7 +383,7 @@ async fn main() -> Result<()> {
                             .split_once(": ")
                             .and_then(|(name_id, _)| name_id.split_once('@'))
                             .map(|(name, _)| name.to_string())
-                            .unwrap_or_else(|| format!("{}...", &sender_id[..8]));
+                            .unwrap_or_else(|| sender_id.clone());
                         (sender_name, text.to_string())
                     }
                 };
@@ -420,14 +420,14 @@ async fn main() -> Result<()> {
                         "groupInvite" => " [group invite]",
                         "vibe" => " [vibe]",
                         other => {
-                            println!("\x1b[35m[dm ← {}...]\x1b[0m [{}] {}", &from[..8], other, dm.content);
+                            println!("\x1b[35m[dm ← {}]\x1b[0m [{}] {}", from, other, dm.content);
                             let _ = response_tx.send(AckResponse::success().to_bytes());
                             continue;
                         }
                     };
                     println!(
-                        "\x1b[35m[dm ← {}...]\x1b[0m{} {}",
-                        &from[..8],
+                        "\x1b[35m[dm ← {}]\x1b[0m{} {}",
+                        from,
                         type_indicator,
                         dm.content
                     );
@@ -437,7 +437,7 @@ async fn main() -> Result<()> {
                 Err(_) => {
                     // Legacy format - plain text
                     let text = String::from_utf8_lossy(&data);
-                    println!("\x1b[35m[dm ← {}...]\x1b[0m {}", &from[..8], text);
+                    println!("\x1b[35m[dm ← {}]\x1b[0m {}", from, text);
                     // Send legacy acknowledgment for backward compatibility
                     let _ = response_tx.send(b"received".to_vec());
                 }
@@ -449,7 +449,6 @@ async fn main() -> Result<()> {
 
     let stdin = tokio::io::stdin();
     let mut stdin_reader = tokio::io::BufReader::new(stdin).lines();
-    let my_id_prefix = &identity[..8];
 
     while let Some(line) = stdin_reader.next_line().await? {
         let line = line.trim();
@@ -475,7 +474,7 @@ async fn main() -> Result<()> {
             } else {
                 println!("Known peers:");
                 for (id_prefix, name) in peers_guard.iter() {
-                    println!("  {name} ({id_prefix}...)");
+                    println!("  {name} ({id_prefix})");
                 }
             }
             continue;
@@ -489,7 +488,7 @@ async fn main() -> Result<()> {
                 println!("Routing table ({} contacts):", contacts.len());
                 for contact in contacts {
                     let id_hex = hex::encode(contact.identity.as_bytes());
-                    println!("  {}... -> {:?}", &id_hex[..16], contact.addrs);
+                    println!("  {} -> {:?}", id_hex, contact.addrs);
                 }
             }
             continue;
@@ -514,7 +513,7 @@ async fn main() -> Result<()> {
                     } else {
                         "\x1b[31mdisconnected\x1b[0m"
                     };
-                    println!("  {}... [{}] {:?}", &id_hex[..16], status, peer.contact.addrs);
+                    println!("  {} [{}] {:?}", id_hex, status, peer.contact.addrs);
                 }
             }
             continue;
@@ -577,10 +576,10 @@ async fn main() -> Result<()> {
                 println!("DHT store ({} entries):", entries.len());
                 for (key, value_len, stored_by) in entries {
                     println!(
-                        "  {}... ({} bytes, by {}...)",
-                        &key[..16],
+                        "  {} ({} bytes, by {})",
+                        key,
                         value_len,
-                        &stored_by[..8]
+                        stored_by
                     );
                 }
             }
@@ -591,7 +590,7 @@ async fn main() -> Result<()> {
             let parts: Vec<&str> = line.splitn(3, ' ').collect();
             if parts.len() < 3 {
                 println!("Usage: /dm <identity_hex> <message>");
-                println!("Example: /dm 5821a288e16c6491... Hello!");
+                println!("Example: /dm 5821a288e16c6491abcdef1234567890abcdef1234567890abcdef12345678 Hello!");
                 continue;
             }
 
@@ -618,8 +617,8 @@ async fn main() -> Result<()> {
                         }
                     };
                     println!(
-                        "\x1b[33m[dm → {}...]\x1b[0m {} [{}]",
-                        &peer_identity[..8],
+                        "\x1b[33m[dm → {}]\x1b[0m {} [{}]",
+                        peer_identity,
                         message,
                         ack_status
                     );
@@ -636,7 +635,7 @@ async fn main() -> Result<()> {
             let parts: Vec<&str> = line.splitn(2, ' ').collect();
             if parts.len() < 2 {
                 println!("Usage: /contact <identity_hex>");
-                println!("Example: /contact 5821a288e16c6491...");
+                println!("Example: /contact 5821a288e16c6491abcdef1234567890abcdef1234567890abcdef12345678");
                 continue;
             }
 
@@ -658,8 +657,8 @@ async fn main() -> Result<()> {
                         _ => "sent (legacy peer)",
                     };
                     println!(
-                        "\x1b[36m[contact request → {}...]\x1b[0m {} [{}]",
-                        &peer_identity[..8],
+                        "\x1b[36m[contact request → {}]\x1b[0m {} [{}]",
+                        peer_identity,
                         args.name,
                         ack_status
                     );
@@ -676,7 +675,7 @@ async fn main() -> Result<()> {
         // Sender identity is authenticated by Korium at the transport layer
         let group_msg = GroupMessage::new(line, &args.room);
         let json_payload = serde_json::to_vec(&group_msg).expect("Failed to serialize message");
-        let formatted = format!("{}@{}: {}", args.name, my_id_prefix, line);
+        let formatted = format!("{}@{}: {}", args.name, identity, line);
 
         if let Err(e) = node
             .publish(&room_topic, json_payload)
