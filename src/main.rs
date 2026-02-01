@@ -263,18 +263,16 @@ fn parse_bootstrap(s: &str) -> Result<(SocketAddr, String)> {
 
 fn print_banner(args: &Args, display_addr: &str, identity: &str) {
     println!();
-    println!("╔════════════════════════════════════════════════════════════════╗");
-    println!("║                              six7                              ║");
-    println!("╠════════════════════════════════════════════════════════════════╣");
-    println!("║ Nickname : {:<52} ║", args.name);
-    println!("║ Room     : {:<52} ║", args.room);
-    println!("║ Address  : {:<52} ║", display_addr);
-    println!("╠════════════════════════════════════════════════════════════════╣");
-    println!("║ Your Identity (for DMs):                                       ║");
-    println!("║ {:<64} ║", identity);
-    println!("╠════════════════════════════════════════════════════════════════╣");
-    println!("║ Bootstrap string (copy this line):                             ║");
-    println!("╚════════════════════════════════════════════════════════════════╝");
+    println!("six7");
+    println!();
+    println!("Nickname : {}", args.name);
+    println!("Room     : {}", args.room);
+    println!("Address  : {}", display_addr);
+    println!();
+    println!("Your Identity (for DMs):");
+    println!("{}", identity);
+    println!();
+    println!("Bootstrap string (copy this line):");
     println!("{}/{}", display_addr, identity);
 }
 
