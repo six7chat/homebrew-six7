@@ -3,7 +3,7 @@
 //! This CLI implements a decentralized chatroom using Korium's adaptive networking
 //! fabric with PubSub messaging, direct messaging, and automatic peer discovery.
 //!
-//! Message Protocol Version: 1.0
+//! Message Protocol Version: 1.3
 //! All messages use JSON format for interoperability with the Six7 mobile app.
 
 use std::collections::HashMap;
@@ -21,7 +21,7 @@ use uuid::Uuid;
 use korium::Node;
 
 // ============================================================================
-// Six7 Message Protocol v1.0
+// Six7 Message Protocol v1.3
 // ============================================================================
 
 /// Message types supported by the Six7 protocol
@@ -40,6 +40,7 @@ pub enum MessageType {
     ContactAccepted,
     Vibe,
     ReadReceipt,
+    ProfileUpdate,
 }
 
 impl std::fmt::Display for MessageType {
@@ -57,6 +58,7 @@ impl std::fmt::Display for MessageType {
             MessageType::ContactAccepted => write!(f, "contactAccepted"),
             MessageType::Vibe => write!(f, "vibe"),
             MessageType::ReadReceipt => write!(f, "readReceipt"),
+            MessageType::ProfileUpdate => write!(f, "profileUpdate"),
         }
     }
 }
@@ -110,7 +112,7 @@ impl DirectMessage {
 }
 
 /// Group Message (PubSub)
-/// Topic: six7-group:{groupId}
+/// Topic: six7-groups:{groupId}
 /// Note: Sender identity is authenticated by Korium transport layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -121,18 +123,25 @@ pub struct GroupMessage {
     pub content: String,
     /// Unix epoch milliseconds
     pub timestamp: i64,
+    /// Message type enum value
+    pub message_type: String,
     /// UUID v4 group identifier
     pub group_id: String,
 }
 
 impl GroupMessage {
-    pub fn new(content: &str, group_id: &str) -> Self {
+    pub fn new(content: &str, message_type: MessageType, group_id: &str) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             content: content.to_string(),
             timestamp: current_timestamp_ms(),
+            message_type: message_type.to_string(),
             group_id: group_id.to_string(),
         }
+    }
+
+    pub fn text(content: &str, group_id: &str) -> Self {
+        Self::new(content, MessageType::Text, group_id)
     }
 }
 
@@ -182,19 +191,14 @@ pub enum VibePayload {
 }
 
 // Topic prefixes
-pub const TOPIC_PREFIX_GROUP: &str = "six7-group:";
-pub const TOPIC_PREFIX_PRESENCE: &str = "six7-presence-inbox:";
-pub const TOPIC_VIBES: &str = "six7-vibes-v1";
+pub const TOPIC_PREFIX_GROUP: &str = "six7-groups:";
+pub const TOPIC_VIBES: &str = "six7-vibes";
 
 // Size limits
 pub const MAX_MESSAGE_SIZE_BYTES: usize = 65536;
 pub const MAX_TOPIC_LENGTH: usize = 256;
 pub const MAX_IDENTITY_LENGTH: usize = 64;
 pub const GROUP_ID_LENGTH: usize = 36;
-
-// Timing constants (seconds)
-pub const HEARTBEAT_INTERVAL_SEC: u64 = 30;
-pub const OFFLINE_THRESHOLD_SEC: u64 = 75;
 
 /// Get current timestamp in milliseconds since Unix epoch
 fn current_timestamp_ms() -> i64 {
@@ -216,7 +220,7 @@ fn current_timestamp_ms() -> i64 {
 #[command(long_about = "six7 is a decentralized chatroom that uses Korium's adaptive networking \
                         fabric for secure, NAT-traversing peer-to-peer communication. \
                         Features include PubSub messaging, direct messaging, and automatic peer discovery.\n\n\
-                        Message Protocol Version: 1.0 - Compatible with Six7 mobile app.")]
+                        Message Protocol Version: 1.3 - Compatible with Six7 mobile app.")]
 struct Args {
     /// Your display name in the chatroom
     #[arg(short, long, default_value = "anon")]
@@ -290,7 +294,7 @@ fn print_help() {
     println!("  /quit                     - Exit");
     println!();
     println!("Type anything else to broadcast to the room.");
-    println!("Messages use Six7 Protocol v1.0 (JSON format).");
+    println!("Messages use Six7 Protocol v1.3 (JSON format).");
     println!();
 }
 
@@ -425,6 +429,7 @@ async fn main() -> Result<()> {
                         "readReceipt" => " [read receipt]",
                         "groupInvite" => " [group invite]",
                         "vibe" => " [vibe]",
+                        "profileUpdate" => " [profile update]",
                         other => {
                             println!("\x1b[35m[dm ← {}]\x1b[0m [{}] {}", from, other, dm.content);
                             let _ = response_tx.send(AckResponse::success().to_bytes());
@@ -688,7 +693,7 @@ async fn main() -> Result<()> {
         // Regular message - broadcast to room using JSON GroupMessage format
         // Note: For the chatroom, we use the room name as group_id for simplicity
         // Sender identity is authenticated by Korium at the transport layer
-        let group_msg = GroupMessage::new(line, &args.room);
+        let group_msg = GroupMessage::text(line, &args.room);
         let json_payload = serde_json::to_vec(&group_msg).expect("Failed to serialize message");
         let formatted = format!("{}@{}: {}", args.name, identity, line);
 
