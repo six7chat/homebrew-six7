@@ -1,4 +1,4 @@
-# Six7 Protocol Specification v1.1
+# Six7 Protocol Specification v1.3
 
 A JSON-based messaging protocol for secure peer-to-peer communication, designed for interoperability between Six7 CLI and mobile applications.
 
@@ -7,7 +7,6 @@ A JSON-based messaging protocol for secure peer-to-peer communication, designed 
 The Six7 Protocol defines message formats and transport mechanisms for:
 - Direct 1:1 messaging (RPC)
 - Group messaging (PubSub)
-- Presence/heartbeat (PubSub)
 - Anonymous matching ("Vibes")
 
 All messages are JSON-encoded and transported over Korium's adaptive networking fabric.
@@ -15,18 +14,19 @@ All messages are JSON-encoded and transported over Korium's adaptive networking 
 ## Message Types
 
 ```
-text           - Plain text message
-image          - Image attachment
-video          - Video attachment
-audio          - Audio attachment
-document       - Document/file attachment
-location       - Geographic coordinates
-contact        - Shared contact information
-groupInvite    - Invitation to join a group
-contactRequest - Request to add as contact
+text            - Plain text message
+image           - Image attachment
+video           - Video attachment
+audio           - Audio attachment
+document        - Document/file attachment
+location        - Geographic coordinates
+contact         - Shared contact information
+groupInvite     - Invitation to join a group
+contactRequest  - Request to add as contact
 contactAccepted - Acceptance of contact request
-vibe           - Anonymous matching signal
-readReceipt    - Delivery/read confirmation
+vibe            - Anonymous matching signal
+readReceipt     - Delivery/read confirmation
+profileUpdate   - Profile/avatar update
 ```
 
 ## Direct Message (RPC)
@@ -78,7 +78,7 @@ Direct messages return an acknowledgment:
 
 ## Group Message (PubSub)
 
-Published to topic: `six7-group:{groupId}`
+Published to topic: `six7-groups:{groupId}`
 
 > **Note:** Sender identity is authenticated by Korium's transport layer and is not included in the message payload.
 
@@ -89,6 +89,7 @@ Published to topic: `six7-group:{groupId}`
   "id": "<uuid-v4>",
   "content": "<json-escaped-string>",
   "timestamp": <unix-epoch-milliseconds>,
+  "messageType": "<message-type>",
   "groupId": "<uuid-v4>"
 }
 ```
@@ -100,6 +101,7 @@ Published to topic: `six7-group:{groupId}`
 | `id` | string | UUID v4 unique message identifier |
 | `content` | string | Message content (JSON-escaped) |
 | `timestamp` | integer | Unix epoch timestamp in milliseconds |
+| `messageType` | string | One of the message type enum values |
 | `groupId` | string | UUID v4 group identifier (36 chars) |
 
 ## Group Invite Payload
@@ -147,6 +149,19 @@ Special direct messages for contact management. Sender identity is provided by K
 }
 ```
 
+## Profile Update
+
+Sent as a direct message (RPC) with `messageType: "profileUpdate"`. The `content` field contains a JSON-encoded profile object.
+
+```json
+{
+  "id": "<uuid-v4>",
+  "content": "{\"displayName\":\"...\",\"avatarBase64\":\"...\"}",
+  "timestamp": <unix-epoch-milliseconds>,
+  "messageType": "profileUpdate"
+}
+```
+
 ## Read Receipt
 
 Confirms message delivery/read status:
@@ -164,25 +179,27 @@ The `content` field contains comma-separated message IDs being acknowledged.
 
 ## Vibe Protocol (Anonymous Matching)
 
-Published to topic: `six7-vibes-v1`
+Profile discovery is published to PubSub topic `six7-vibes`. The commitment/reveal handshake is exchanged via direct RPC messages with `messageType: "vibe"`.
 
-### Commitment Phase
+### Commitment Phase (RPC)
 
 ```json
 {
-  "type": "commitment",
-  "vibeId": "<uuid>",
-  "commitment": "<hash>"
+  "id": "<uuid-v4>",
+  "content": "{\"type\":\"commitment\",\"vibeId\":\"<uuid>\",\"commitment\":\"<hash>\"}",
+  "timestamp": <unix-epoch-milliseconds>,
+  "messageType": "vibe"
 }
 ```
 
-### Reveal Phase
+### Reveal Phase (RPC)
 
 ```json
 {
-  "type": "reveal",
-  "vibeId": "<uuid>",
-  "secret": "<secret-value>"
+  "id": "<uuid-v4>",
+  "content": "{\"type\":\"reveal\",\"vibeId\":\"<uuid>\",\"secret\":\"<secret-value>\"}",
+  "timestamp": <unix-epoch-milliseconds>,
+  "messageType": "vibe"
 }
 ```
 
@@ -190,9 +207,8 @@ Published to topic: `six7-vibes-v1`
 
 | Purpose | Topic Pattern |
 |---------|---------------|
-| Group chat | `six7-group:{groupId}` |
-| Presence inbox | `six7-presence-inbox:{identity}` |
-| Vibes matching | `six7-vibes-v1` |
+| Group chat | `six7-groups:{groupId}` |
+| Vibes matching | `six7-vibes` |
 
 ## Limits
 
@@ -202,13 +218,6 @@ Published to topic: `six7-vibes-v1`
 | Max topic length | 256 characters |
 | Identity length | 64 hex characters |
 | Group ID length | 36 characters (UUID) |
-
-## Timing
-
-| Parameter | Value |
-|-----------|-------|
-| Heartbeat interval | 30 seconds |
-| Offline threshold | 75 seconds |
 
 ## Identity Format
 
@@ -227,9 +236,11 @@ All messages are transported over Korium's adaptive networking fabric which prov
 
 ## Versioning
 
-Protocol version is indicated in the message header and CLI banner. This document describes **Protocol Version 1.1**.
+Protocol version is indicated in the message header and CLI banner. This document describes **Protocol Version 1.3**.
 
 ### Changelog
 
+- **v1.3** - Removed presence/heartbeat system
+- **v1.2** - Added `messageType` to group messages; added `profileUpdate` message type; corrected vibe handshake transport (RPC, not PubSub); fixed topic naming
 - **v1.1** - Removed redundant `from` field; sender identity authenticated by Korium transport layer
 - **v1.0** - Initial JSON message format for app interoperability
