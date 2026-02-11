@@ -1,13 +1,13 @@
 class Six7 < Formula
-  desc "Secure P2P chat CLI with Six7 Protocol v1.3 - powered by Korium 0.7.23"
+  desc "Secure P2P chat CLI with Six7 Protocol v1.3 - powered by Korium 0.7.24"
   homepage "https://github.com/six7chat/homebrew-six7"
-  version "0.7.23"
+  version "0.7.24"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/six7chat/homebrew-six7/releases/download/v0.7.23/six7-0.7.23-arm64-apple-darwin.tar.gz"
-      sha256 "c8a197ee4bde94551936945aee28af7f05a444722c70da517635f8d92434f35a"
+      url "https://github.com/six7chat/homebrew-six7/releases/download/v0.7.24/six7-0.7.24-arm64-apple-darwin.tar.gz"
+      sha256 "ba0d47273a00cb2de9f06947678bf617f29f0c3ba3ba66fbe804b8e1062a4de3"
     end
   end
 
