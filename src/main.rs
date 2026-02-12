@@ -1,21 +1,21 @@
-//! six7 — Secure peer-to-peer chatroom CLI built on Korium
+//! Secure peer-to-peer chatroom CLI
 //!
 //! Decentralized chatroom using Korium's adaptive networking fabric
 //! with PubSub messaging, direct messaging, and automatic peer discovery.
 //!
 //! Protocol Version: 1.3
-//! JSON message format for interoperability with the Six7 mobile app.
+//! Binary message format using postcard serialization.
 
 use std::collections::HashMap;
+use std::io::BufRead;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncBufReadExt;
 use tokio::sync::RwLock;
-use uuid::Uuid;
 
 use korium::Node;
 
@@ -81,7 +81,7 @@ pub struct DirectMessage {
 impl DirectMessage {
     pub fn new(content: &str, message_type: MessageType) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: random_hex_id(),
             content: content.to_string(),
             timestamp: current_timestamp_ms(),
             message_type: message_type.to_string(),
@@ -131,7 +131,7 @@ pub struct GroupMessage {
 impl GroupMessage {
     pub fn new(content: &str, message_type: MessageType, group_id: &str) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: random_hex_id(),
             content: content.to_string(),
             timestamp: current_timestamp_ms(),
             message_type: message_type.to_string(),
@@ -169,7 +169,7 @@ impl AckResponse {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap_or_else(|_| b"{\"ack\":true}".to_vec())
+        postcard::to_allocvec(self).expect("AckResponse serialization is infallible")
     }
 }
 
@@ -199,11 +199,24 @@ pub const MAX_TOPIC_LENGTH: usize = 256;
 pub const MAX_IDENTITY_LENGTH: usize = 64;
 pub const GROUP_ID_LENGTH: usize = 36;
 
+fn sanitize_text(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect()
+}
+
 fn current_timestamp_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// Generate a random 128-bit hex identifier (replaces UUID v4).
+fn random_hex_id() -> String {
+    let mut bytes = [0u8; 16];
+    rand::thread_rng().fill(&mut bytes);
+    hex::encode(bytes)
 }
 
 // ============================================================================
@@ -286,9 +299,7 @@ fn print_help() {
     println!("  /dm <identity> <message>  - Send direct message");
     println!("  /contact <identity>       - Send contact request");
     println!("  /peers                    - List peers discovered via room messages");
-    println!("  /fabric                   - Show fabric peers (connection state)");
-    println!("  /routing                  - Show DHT routing table");
-    println!("  /dht                      - Show DHT store entries");
+    println!("  /list                     - Show all peer tables (fabric/transport/routing/gossipsub/dht)");
     println!("  /telemetry                - Show node telemetry");
     println!("  /help                     - Show this help");
     println!("  /quit                     - Exit");
@@ -366,6 +377,10 @@ async fn main() -> Result<()> {
     // PubSub handler
     tokio::spawn(async move {
         while let Some(msg) = pubsub_rx.recv().await {
+            if msg.data.len() > MAX_MESSAGE_SIZE_BYTES {
+                continue;
+            }
+
             if msg.topic != format!("chat/{room_filter}") {
                 continue;
             }
@@ -375,9 +390,9 @@ async fn main() -> Result<()> {
                 continue;
             }
 
-            let id_prefix = &sender_id[..8];
+            let id_prefix = &sender_id[..8.min(sender_id.len())];
 
-            let (sender_name, display_content) = match serde_json::from_slice::<GroupMessage>(&msg.data) {
+            let (sender_name, display_content) = match postcard::from_bytes::<GroupMessage>(&msg.data) {
                 Ok(group_msg) => {
                     let name = {
                         let peers = peers_for_pubsub.read().await;
@@ -404,20 +419,26 @@ async fn main() -> Result<()> {
             // Track peer
             {
                 let mut peers = peers_for_pubsub.write().await;
+                if peers.len() > 1000 {
+                    peers.clear(); // Prevent unbounded growth
+                }
                 peers
                     .entry(id_prefix.to_string())
                     .or_insert_with(|| sender_name.clone());
             }
 
-            println!("\x1b[32m[room]\x1b[0m {display_content}");
+            println!("\x1b[32m[room]\x1b[0m {}", sanitize_text(&display_content));
         }
     });
 
     // DM handler
     tokio::spawn(async move {
         while let Some((from, data, response_tx)) = dm_rx.recv().await {
+            if data.len() > MAX_MESSAGE_SIZE_BYTES {
+                continue;
+            }
             let from_short = &from[..8.min(from.len())];
-            match serde_json::from_slice::<DirectMessage>(&data) {
+            match postcard::from_bytes::<DirectMessage>(&data) {
                 Ok(dm) => {
                     let tag = match dm.message_type.as_str() {
                         "text" => "",
@@ -428,17 +449,17 @@ async fn main() -> Result<()> {
                         "vibe" => " [vibe]",
                         "profileUpdate" => " [profile update]",
                         other => {
-                            println!("\x1b[35m[dm ← {}]\x1b[0m [{}] {}", from_short, other, dm.content);
+                            println!("\x1b[35m[dm ← {}]\x1b[0m [{}] {}", from_short, other, sanitize_text(&dm.content));
                             let _ = response_tx.send(AckResponse::success().to_bytes());
                             continue;
                         }
                     };
-                    println!("\x1b[35m[dm ← {}]\x1b[0m{} {}", from_short, tag, dm.content);
+                    println!("\x1b[35m[dm ← {}]\x1b[0m{} {}", from_short, tag, sanitize_text(&dm.content));
                     let _ = response_tx.send(AckResponse::success().to_bytes());
                 }
                 Err(_) => {
                     let text = String::from_utf8_lossy(&data);
-                    println!("\x1b[35m[dm ← {}]\x1b[0m {}", from_short, text);
+                    println!("\x1b[35m[dm ← {}]\x1b[0m {}", from_short, sanitize_text(&text));
                     let _ = response_tx.send(b"received".to_vec());
                 }
             }
@@ -447,10 +468,24 @@ async fn main() -> Result<()> {
 
     print_help();
 
-    let stdin = tokio::io::stdin();
-    let mut stdin_reader = tokio::io::BufReader::new(stdin).lines();
+    // Read stdin on a blocking OS thread, bridge to async via channel.
+    let (stdin_tx, mut stdin_rx) = tokio::sync::mpsc::channel::<String>(16);
+    std::thread::spawn(move || {
+        let stdin = std::io::stdin();
+        let reader = stdin.lock();
+        for line in reader.lines() {
+            match line {
+                Ok(l) => {
+                    if stdin_tx.blocking_send(l).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
 
-    while let Some(line) = stdin_reader.next_line().await? {
+    while let Some(line) = stdin_rx.recv().await {
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -475,39 +510,108 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            "/routing" => {
-                let contacts = node.get_peers().await;
-                if contacts.is_empty() {
-                    println!("Routing table is empty.");
+            "/list" => {
+                // ── Fabric (QUIC) ──────────────────────────────────────
+                let fab_all = node.all_contacts().await;
+                let fab_connected = node.connected_contacts().await;
+                let fab_connected_ids: std::collections::HashSet<_> = fab_connected
+                    .iter()
+                    .map(|c| c.identity)
+                    .collect();
+
+                println!();
+                println!("\x1b[1m── Fabric (QUIC) ── {} peers, {} connected\x1b[0m", fab_all.len(), fab_connected.len());
+                if fab_all.is_empty() {
+                    println!("  (none)");
                 } else {
-                    println!("Routing table ({} contacts):", contacts.len());
-                    for c in &contacts {
-                        let id_hex = hex::encode(c.identity.as_bytes());
-                        println!("  {} -> {:?}", id_hex, c.addrs);
-                    }
-                }
-            }
-            "/fabric" => {
-                let all = node.all_contacts().await;
-                let connected = node.connected_contacts().await;
-                if all.is_empty() {
-                    println!("Fabric is empty (no known peers).");
-                } else {
-                    println!("Fabric ({} peers, {} connected):", all.len(), connected.len());
-                    let connected_ids: std::collections::HashSet<_> = connected
-                        .iter()
-                        .map(|c| hex::encode(c.identity.as_bytes()))
-                        .collect();
-                    for c in &all {
-                        let id_hex = hex::encode(c.identity.as_bytes());
-                        let status = if connected_ids.contains(&id_hex) {
+                    for c in &fab_all {
+                        let short = &hex::encode(c.identity.as_bytes())[..16];
+                        let status = if fab_connected_ids.contains(&c.identity) {
                             "\x1b[32mconnected\x1b[0m"
                         } else {
                             "\x1b[31mdisconnected\x1b[0m"
                         };
-                        println!("  {} [{}] {:?}", id_hex, status, c.addrs);
+                        let addrs = c.addrs.join(", ");
+                        println!("  {}..  [{}]  {}", short, status, addrs);
                     }
                 }
+
+                // ── Transport (UDP) ─────────────────────────────────────────────
+                let transport_peers = node.transport_peers();
+                println!();
+                println!("\x1b[1m── Transport (UDP) ── {} peers\x1b[0m", transport_peers.len());
+                if transport_peers.is_empty() {
+                    println!("  (none)");
+                } else {
+                    for (id, addr, rtt) in &transport_peers {
+                        let short = &hex::encode(id.as_bytes())[..16];
+                        let rtt_str = match rtt {
+                            Some(d) => format!("{:.1}ms", d.as_secs_f64() * 1000.0),
+                            None => "—".to_string(),
+                        };
+                        println!("  {}..  rtt={:<10}  vaddr={}", short, rtt_str, addr);
+                    }
+                }
+
+                // ── DHT Routing ────────────────────────────────────────
+                let routing = node.get_peers().await;
+                println!();
+                println!("\x1b[1m── DHT Routing ── {} contacts\x1b[0m", routing.len());
+                if routing.is_empty() {
+                    println!("  (none)");
+                } else {
+                    for c in &routing {
+                        let short = &hex::encode(c.identity.as_bytes())[..16];
+                        let addrs = c.addrs.join(", ");
+                        println!("  {}..  {}", short, addrs);
+                    }
+                }
+
+                // ── GossipSub ──────────────────────────────────────────
+                let topic_peers = node.gossipsub_topic_peers().await;
+                let total_unique: std::collections::HashSet<_> = topic_peers
+                    .iter()
+                    .flat_map(|tp| tp.eager_peers.iter().chain(tp.lazy_peers.iter()))
+                    .collect();
+                println!();
+                println!(
+                    "\x1b[1m── GossipSub ── {} topics, {} unique peers\x1b[0m",
+                    topic_peers.len(),
+                    total_unique.len()
+                );
+                if topic_peers.is_empty() {
+                    println!("  (none)");
+                } else {
+                    for tp in &topic_peers {
+                        println!(
+                            "  topic: {}  ({} eager, {} lazy)",
+                            tp.topic,
+                            tp.eager_peers.len(),
+                            tp.lazy_peers.len()
+                        );
+                        for p in &tp.eager_peers {
+                            let short = &hex::encode(p.as_bytes())[..16];
+                            println!("    \x1b[32meager\x1b[0m  {}.. ", short);
+                        }
+                        for p in &tp.lazy_peers {
+                            let short = &hex::encode(p.as_bytes())[..16];
+                            println!("    \x1b[33mlazy\x1b[0m   {}.. ", short);
+                        }
+                    }
+                }
+
+                // ── DHT Store ──────────────────────────────────────────
+                let store = node.list_dht_store().await;
+                println!();
+                println!("\x1b[1m── DHT Store ── {} entries\x1b[0m", store.len());
+                if store.is_empty() {
+                    println!("  (none)");
+                } else {
+                    for (key, value_len, stored_by) in &store {
+                        println!("  {}  ({} bytes, by {})", key, value_len, stored_by);
+                    }
+                }
+                println!();
             }
             "/telemetry" => {
                 let t = node.telemetry().await;
@@ -538,17 +642,6 @@ async fn main() -> Result<()> {
                 }
                 println!("╚════════════════════════════════════════════════════════════════╝");
             }
-            "/dht" => {
-                let entries = node.list_dht_store().await;
-                if entries.is_empty() {
-                    println!("DHT store is empty.");
-                } else {
-                    println!("DHT store ({} entries):", entries.len());
-                    for (key, value_len, stored_by) in &entries {
-                        println!("  {} ({} bytes, by {})", key, value_len, stored_by);
-                    }
-                }
-            }
             _ if line.starts_with("/dm ") => {
                 let parts: Vec<&str> = line.splitn(3, ' ').collect();
                 if parts.len() < 3 {
@@ -559,17 +652,22 @@ async fn main() -> Result<()> {
                 let peer_identity = parts[1];
                 let message = parts[2];
 
+                if message.len() > MAX_MESSAGE_SIZE_BYTES {
+                    println!("Message too large (max {} bytes)", MAX_MESSAGE_SIZE_BYTES);
+                    continue;
+                }
+
                 if peer_identity.len() != MAX_IDENTITY_LENGTH || hex::decode(peer_identity).is_err() {
                     println!("Invalid identity. Must be {} hex characters.", MAX_IDENTITY_LENGTH);
                     continue;
                 }
 
                 let dm = DirectMessage::text(message);
-                let payload = serde_json::to_vec(&dm).expect("Failed to serialize message");
+                let payload = postcard::to_allocvec(&dm).expect("Failed to serialize message");
 
                 match tokio::time::timeout(Duration::from_secs(10), node.send(peer_identity, payload)).await {
                     Ok(Ok(response)) => {
-                        let ack = match serde_json::from_slice::<AckResponse>(&response) {
+                        let ack = match postcard::from_bytes::<AckResponse>(&response) {
                             Ok(a) if a.ack => "✓",
                             _ => {
                                 if String::from_utf8_lossy(&response) == "received" {
@@ -600,11 +698,11 @@ async fn main() -> Result<()> {
                 }
 
                 let req = DirectMessage::contact_request(&args.name);
-                let payload = serde_json::to_vec(&req).expect("Failed to serialize contact request");
+                let payload = postcard::to_allocvec(&req).expect("Failed to serialize contact request");
 
                 match tokio::time::timeout(Duration::from_secs(10), node.send(peer_identity, payload)).await {
                     Ok(Ok(response)) => {
-                        let status = match serde_json::from_slice::<AckResponse>(&response) {
+                        let status = match postcard::from_bytes::<AckResponse>(&response) {
                             Ok(a) if a.ack => "sent",
                             _ => "sent (legacy peer)",
                         };
@@ -618,15 +716,19 @@ async fn main() -> Result<()> {
                 println!("Unknown command. Type /help for available commands.");
             }
             _ => {
+                if line.len() > MAX_MESSAGE_SIZE_BYTES {
+                    println!("Message too large (max {} bytes)", MAX_MESSAGE_SIZE_BYTES);
+                    continue;
+                }
                 // Broadcast to room
                 let group_msg = GroupMessage::text(line, &args.room);
-                let payload = serde_json::to_vec(&group_msg).expect("Failed to serialize message");
+                let payload = postcard::to_allocvec(&group_msg).expect("Failed to serialize message");
                 let formatted = format!("{}@{}: {}", args.name, &identity[..8], line);
 
                 if let Err(e) = node.publish(&room_topic, payload).await {
                     eprintln!("Failed to send message: {e}");
                 } else {
-                    println!("\x1b[32m[room]\x1b[0m {formatted}");
+                    println!("\x1b[32m[room]\x1b[0m {}", sanitize_text(&formatted));
                 }
             }
         }
