@@ -178,15 +178,9 @@ impl AckResponse {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum VibePayload {
     #[serde(rename = "commitment")]
-    Commitment {
-        vibe_id: String,
-        commitment: String,
-    },
+    Commitment { vibe_id: String, commitment: String },
     #[serde(rename = "reveal")]
-    Reveal {
-        vibe_id: String,
-        secret: String,
-    },
+    Reveal { vibe_id: String, secret: String },
 }
 
 // Topic prefixes
@@ -227,10 +221,12 @@ fn random_hex_id() -> String {
 #[derive(Parser, Debug)]
 #[command(name = "six7", version)]
 #[command(about = "Secure peer-to-peer chatroom CLI built on Korium")]
-#[command(long_about = "six7 is a decentralized chatroom that uses Korium's adaptive networking \
+#[command(
+    long_about = "six7 is a decentralized chatroom that uses Korium's adaptive networking \
                         fabric for secure, NAT-traversing peer-to-peer communication.\n\n\
                         Features: PubSub messaging, direct messaging, automatic peer discovery.\n\
-                        Protocol Version 1.3 — Compatible with the Six7 mobile app.")]
+                        Protocol Version 1.3 — Compatible with the Six7 mobile app."
+)]
 struct Args {
     /// Display name in the chatroom
     #[arg(short, long, default_value = "anon")]
@@ -299,7 +295,9 @@ fn print_help() {
     println!("  /dm <identity> <message>  - Send direct message");
     println!("  /contact <identity>       - Send contact request");
     println!("  /peers                    - List peers discovered via room messages");
-    println!("  /list                     - Show all peer tables (fabric/transport/routing/gossipsub/dht)");
+    println!(
+        "  /list                     - Show all peer tables (fabric/transport/routing/gossipsub/dht)"
+    );
     println!("  /telemetry                - Show node telemetry");
     println!("  /help                     - Show this help");
     println!("  /quit                     - Exit");
@@ -323,12 +321,12 @@ async fn main() -> Result<()> {
 
     // Build node (includes PoW identity mining)
     let bind_addr = format!("0.0.0.0:{}", args.port);
-    
+
     print!("Mining identity (PoW)... ");
     std::io::Write::flush(&mut std::io::stdout()).ok();
-    
+
     let node = Arc::new(Node::builder(&bind_addr).build().await?);
-    
+
     println!("done!");
 
     let local_addr = node.local_addr()?;
@@ -392,29 +390,30 @@ async fn main() -> Result<()> {
 
             let id_prefix = &sender_id[..8.min(sender_id.len())];
 
-            let (sender_name, display_content) = match postcard::from_bytes::<GroupMessage>(&msg.data) {
-                Ok(group_msg) => {
-                    let name = {
-                        let peers = peers_for_pubsub.read().await;
-                        peers.get(id_prefix).cloned()
-                    }
-                    .unwrap_or_else(|| id_prefix.to_string());
-                    (
-                        name.clone(),
-                        format!("{}@{}: {}", name, id_prefix, group_msg.content),
-                    )
-                }
-                Err(_) => {
-                    // Legacy plain-text fallback
-                    let text = String::from_utf8_lossy(&msg.data);
-                    let sender_name = text
-                        .split_once(": ")
-                        .and_then(|(prefix, _)| prefix.split_once('@'))
-                        .map(|(name, _)| name.to_string())
+            let (sender_name, display_content) =
+                match postcard::from_bytes::<GroupMessage>(&msg.data) {
+                    Ok(group_msg) => {
+                        let name = {
+                            let peers = peers_for_pubsub.read().await;
+                            peers.get(id_prefix).cloned()
+                        }
                         .unwrap_or_else(|| id_prefix.to_string());
-                    (sender_name, text.to_string())
-                }
-            };
+                        (
+                            name.clone(),
+                            format!("{}@{}: {}", name, id_prefix, group_msg.content),
+                        )
+                    }
+                    Err(_) => {
+                        // Legacy plain-text fallback
+                        let text = String::from_utf8_lossy(&msg.data);
+                        let sender_name = text
+                            .split_once(": ")
+                            .and_then(|(prefix, _)| prefix.split_once('@'))
+                            .map(|(name, _)| name.to_string())
+                            .unwrap_or_else(|| id_prefix.to_string());
+                        (sender_name, text.to_string())
+                    }
+                };
 
             // Track peer
             {
@@ -449,17 +448,31 @@ async fn main() -> Result<()> {
                         "vibe" => " [vibe]",
                         "profileUpdate" => " [profile update]",
                         other => {
-                            println!("\x1b[35m[dm ← {}]\x1b[0m [{}] {}", from_short, other, sanitize_text(&dm.content));
+                            println!(
+                                "\x1b[35m[dm ← {}]\x1b[0m [{}] {}",
+                                from_short,
+                                other,
+                                sanitize_text(&dm.content)
+                            );
                             let _ = response_tx.send(AckResponse::success().to_bytes());
                             continue;
                         }
                     };
-                    println!("\x1b[35m[dm ← {}]\x1b[0m{} {}", from_short, tag, sanitize_text(&dm.content));
+                    println!(
+                        "\x1b[35m[dm ← {}]\x1b[0m{} {}",
+                        from_short,
+                        tag,
+                        sanitize_text(&dm.content)
+                    );
                     let _ = response_tx.send(AckResponse::success().to_bytes());
                 }
                 Err(_) => {
                     let text = String::from_utf8_lossy(&data);
-                    println!("\x1b[35m[dm ← {}]\x1b[0m {}", from_short, sanitize_text(&text));
+                    println!(
+                        "\x1b[35m[dm ← {}]\x1b[0m {}",
+                        from_short,
+                        sanitize_text(&text)
+                    );
                     let _ = response_tx.send(b"received".to_vec());
                 }
             }
@@ -514,13 +527,15 @@ async fn main() -> Result<()> {
                 // ── Fabric (QUIC) ──────────────────────────────────────
                 let fab_all = node.all_contacts().await;
                 let fab_connected = node.connected_contacts().await;
-                let fab_connected_ids: std::collections::HashSet<_> = fab_connected
-                    .iter()
-                    .map(|c| c.identity)
-                    .collect();
+                let fab_connected_ids: std::collections::HashSet<_> =
+                    fab_connected.iter().map(|c| c.identity).collect();
 
                 println!();
-                println!("\x1b[1m── Fabric (QUIC) ── {} peers, {} connected\x1b[0m", fab_all.len(), fab_connected.len());
+                println!(
+                    "\x1b[1m── Fabric (QUIC) ── {} peers, {} connected\x1b[0m",
+                    fab_all.len(),
+                    fab_connected.len()
+                );
                 if fab_all.is_empty() {
                     println!("  (none)");
                 } else {
@@ -539,7 +554,10 @@ async fn main() -> Result<()> {
                 // ── Transport (UDP) ─────────────────────────────────────────────
                 let transport_peers = node.transport_peers();
                 println!();
-                println!("\x1b[1m── Transport (UDP) ── {} peers\x1b[0m", transport_peers.len());
+                println!(
+                    "\x1b[1m── Transport (UDP) ── {} peers\x1b[0m",
+                    transport_peers.len()
+                );
                 if transport_peers.is_empty() {
                     println!("  (none)");
                 } else {
@@ -618,19 +636,58 @@ async fn main() -> Result<()> {
                 println!("╔════════════════════════════════════════════════════════════════╗");
                 println!("║                         Telemetry                              ║");
                 println!("╠════════════════════════════════════════════════════════════════╣");
-                println!("║ DHT Store        : {:>6} keys                                 ║", t.stored_keys);
-                println!("║ DHT Replication  : {:>6}                                       ║", t.replication_factor);
-                println!("║ DHT Concurrency  : {:>6}                                       ║", t.concurrency);
-                println!("║ DHT Pressure     : {:>6.2}                                      ║", t.pressure);
-                println!("║ Routing Peers    : {:>6}                                       ║", t.connected_peers);
-                println!("║ GossipSub Mesh   : {:>6} peers                                 ║", t.gossipsub_mesh_peers);
-                println!("║ GossipSub Topics : {:>6}                                       ║", t.gossipsub_topics);
-                println!("║ Transport Sent   : {:>6}                                       ║", t.transport_requests_sent);
-                println!("║ Transport Recv   : {:>6}                                       ║", t.transport_requests_received);
-                println!("║ Transport OK     : {:>6}                                       ║", t.transport_responses_success);
-                println!("║ Transport Errors : {:>6}                                       ║", t.transport_errors);
-                println!("║ Connections      : {:>6} cached                                ║", t.transport_connections_cached);
-                println!("║ Connections Est. : {:>6}                                       ║", t.transport_connections_established);
+                println!(
+                    "║ DHT Store        : {:>6} keys                                 ║",
+                    t.stored_keys
+                );
+                println!(
+                    "║ DHT Replication  : {:>6}                                       ║",
+                    t.replication_factor
+                );
+                println!(
+                    "║ DHT Concurrency  : {:>6}                                       ║",
+                    t.concurrency
+                );
+                println!(
+                    "║ DHT Pressure     : {:>6.2}                                      ║",
+                    t.pressure
+                );
+                println!(
+                    "║ Routing Peers    : {:>6}                                       ║",
+                    t.connected_peers
+                );
+                println!(
+                    "║ GossipSub Mesh   : {:>6} peers                                 ║",
+                    t.gossipsub_mesh_peers
+                );
+                println!(
+                    "║ GossipSub Topics : {:>6}                                       ║",
+                    t.gossipsub_topics
+                );
+                println!(
+                    "║ Transport Sent   : {:>6}                                       ║",
+                    t.transport_requests_sent
+                );
+                println!(
+                    "║ Transport Recv   : {:>6}                                       ║",
+                    t.transport_requests_received
+                );
+                println!(
+                    "║ Transport OK     : {:>6}                                       ║",
+                    t.transport_responses_success
+                );
+                println!(
+                    "║ Transport Errors : {:>6}                                       ║",
+                    t.transport_errors
+                );
+                println!(
+                    "║ Connections      : {:>6} cached                                ║",
+                    t.transport_connections_cached
+                );
+                println!(
+                    "║ Connections Est. : {:>6}                                       ║",
+                    t.transport_connections_established
+                );
                 if !t.tier_centroids.is_empty() {
                     let tiers: Vec<String> = t
                         .tier_centroids
@@ -657,15 +714,24 @@ async fn main() -> Result<()> {
                     continue;
                 }
 
-                if peer_identity.len() != MAX_IDENTITY_LENGTH || hex::decode(peer_identity).is_err() {
-                    println!("Invalid identity. Must be {} hex characters.", MAX_IDENTITY_LENGTH);
+                if peer_identity.len() != MAX_IDENTITY_LENGTH || hex::decode(peer_identity).is_err()
+                {
+                    println!(
+                        "Invalid identity. Must be {} hex characters.",
+                        MAX_IDENTITY_LENGTH
+                    );
                     continue;
                 }
 
                 let dm = DirectMessage::text(message);
                 let payload = postcard::to_allocvec(&dm).expect("Failed to serialize message");
 
-                match tokio::time::timeout(Duration::from_secs(10), node.send(peer_identity, payload)).await {
+                match tokio::time::timeout(
+                    Duration::from_secs(10),
+                    node.send(peer_identity, payload),
+                )
+                .await
+                {
                     Ok(Ok(response)) => {
                         let ack = match postcard::from_bytes::<AckResponse>(&response) {
                             Ok(a) if a.ack => "✓",
@@ -677,7 +743,12 @@ async fn main() -> Result<()> {
                                 }
                             }
                         };
-                        println!("\x1b[33m[dm → {}]\x1b[0m {} [{}]", &peer_identity[..8], message, ack);
+                        println!(
+                            "\x1b[33m[dm → {}]\x1b[0m {} [{}]",
+                            &peer_identity[..8],
+                            message,
+                            ack
+                        );
                     }
                     Ok(Err(e)) => eprintln!("\x1b[31m[dm error]\x1b[0m Failed to send: {e}"),
                     Err(_) => eprintln!("\x1b[31m[dm error]\x1b[0m Timeout: peer unreachable"),
@@ -692,21 +763,36 @@ async fn main() -> Result<()> {
 
                 let peer_identity = parts[1];
 
-                if peer_identity.len() != MAX_IDENTITY_LENGTH || hex::decode(peer_identity).is_err() {
-                    println!("Invalid identity. Must be {} hex characters.", MAX_IDENTITY_LENGTH);
+                if peer_identity.len() != MAX_IDENTITY_LENGTH || hex::decode(peer_identity).is_err()
+                {
+                    println!(
+                        "Invalid identity. Must be {} hex characters.",
+                        MAX_IDENTITY_LENGTH
+                    );
                     continue;
                 }
 
                 let req = DirectMessage::contact_request(&args.name);
-                let payload = postcard::to_allocvec(&req).expect("Failed to serialize contact request");
+                let payload =
+                    postcard::to_allocvec(&req).expect("Failed to serialize contact request");
 
-                match tokio::time::timeout(Duration::from_secs(10), node.send(peer_identity, payload)).await {
+                match tokio::time::timeout(
+                    Duration::from_secs(10),
+                    node.send(peer_identity, payload),
+                )
+                .await
+                {
                     Ok(Ok(response)) => {
                         let status = match postcard::from_bytes::<AckResponse>(&response) {
                             Ok(a) if a.ack => "sent",
                             _ => "sent (legacy peer)",
                         };
-                        println!("\x1b[36m[contact → {}]\x1b[0m {} [{}]", &peer_identity[..8], args.name, status);
+                        println!(
+                            "\x1b[36m[contact → {}]\x1b[0m {} [{}]",
+                            &peer_identity[..8],
+                            args.name,
+                            status
+                        );
                     }
                     Ok(Err(e)) => eprintln!("\x1b[31m[contact error]\x1b[0m Failed to send: {e}"),
                     Err(_) => eprintln!("\x1b[31m[contact error]\x1b[0m Timeout: peer unreachable"),
@@ -722,7 +808,8 @@ async fn main() -> Result<()> {
                 }
                 // Broadcast to room
                 let group_msg = GroupMessage::text(line, &args.room);
-                let payload = postcard::to_allocvec(&group_msg).expect("Failed to serialize message");
+                let payload =
+                    postcard::to_allocvec(&group_msg).expect("Failed to serialize message");
                 let formatted = format!("{}@{}: {}", args.name, &identity[..8], line);
 
                 if let Err(e) = node.publish(&room_topic, payload).await {
