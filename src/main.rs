@@ -320,12 +320,10 @@ async fn main() -> Result<()> {
         .init();
 
     // Build node (includes PoW identity mining)
-    let bind_addr = format!("0.0.0.0:{}", args.port);
-
     print!("Mining identity (PoW)... ");
     std::io::Write::flush(&mut std::io::stdout()).ok();
 
-    let node = Arc::new(Node::builder(&bind_addr).build().await?);
+    let node = Arc::new(Node::builder().bind_port(args.port).build().await?);
 
     println!("done!");
 
