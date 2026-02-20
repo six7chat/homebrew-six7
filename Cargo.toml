@@ -1,6 +1,6 @@
 [package]
 name = "six7"
-version = "0.7.21"
+version = "0.7.23"
 edition = "2021"
 authors = ["Flavio Aiello"]
 description = "A secure peer-to-peer chatroom CLI built on Korium's adaptive networking fabric"

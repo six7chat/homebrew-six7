@@ -1,13 +1,12 @@
-//! six7 - A secure peer-to-peer chatroom CLI built on Korium
+//! six7 — Secure peer-to-peer chatroom CLI built on Korium
 //!
-//! This CLI implements a decentralized chatroom using Korium's adaptive networking
-//! fabric with PubSub messaging, direct messaging, and automatic peer discovery.
+//! Decentralized chatroom using Korium's adaptive networking fabric
+//! with PubSub messaging, direct messaging, and automatic peer discovery.
 //!
-//! Message Protocol Version: 1.3
-//! All messages use JSON format for interoperability with the Six7 mobile app.
+//! Protocol Version: 1.3
+//! JSON message format for interoperability with the Six7 mobile app.
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -200,7 +199,6 @@ pub const MAX_TOPIC_LENGTH: usize = 256;
 pub const MAX_IDENTITY_LENGTH: usize = 64;
 pub const GROUP_ID_LENGTH: usize = 36;
 
-/// Get current timestamp in milliseconds since Unix epoch
 fn current_timestamp_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -209,36 +207,35 @@ fn current_timestamp_ms() -> i64 {
 }
 
 // ============================================================================
-// CLI Application
+// CLI
 // ============================================================================
 
-/// A secure peer-to-peer chatroom built on Korium's adaptive networking fabric
+/// Secure peer-to-peer chatroom built on Korium's adaptive networking fabric.
 #[derive(Parser, Debug)]
-#[command(name = "six7")]
-#[command(version)]
-#[command(about = "A secure peer-to-peer chatroom CLI built on Korium")]
+#[command(name = "six7", version)]
+#[command(about = "Secure peer-to-peer chatroom CLI built on Korium")]
 #[command(long_about = "six7 is a decentralized chatroom that uses Korium's adaptive networking \
-                        fabric for secure, NAT-traversing peer-to-peer communication. \
-                        Features include PubSub messaging, direct messaging, and automatic peer discovery.\n\n\
-                        Message Protocol Version: 1.3 - Compatible with Six7 mobile app.")]
+                        fabric for secure, NAT-traversing peer-to-peer communication.\n\n\
+                        Features: PubSub messaging, direct messaging, automatic peer discovery.\n\
+                        Protocol Version 1.3 — Compatible with the Six7 mobile app.")]
 struct Args {
-    /// Your display name in the chatroom
+    /// Display name in the chatroom
     #[arg(short, long, default_value = "anon")]
     name: String,
 
-    /// Name of the chatroom to join
+    /// Chatroom to join
     #[arg(short, long, default_value = "lobby")]
     room: String,
 
-    /// Port to bind to (0 for random)
+    /// Port to bind to (0 = random)
     #[arg(short, long, default_value = "0")]
     port: u16,
 
-    /// Bootstrap peer address in format: <address>/<identity_hex>
+    /// Bootstrap peer: `<address>/<identity_hex>`
     #[arg(short = 'B', long = "bootstrap")]
     bootstrap: Option<String>,
 
-    /// Bootstrap using public Korium network nodes
+    /// Bootstrap from public Korium network
     #[arg(short = 'P', long = "public")]
     public: bool,
 
@@ -249,20 +246,23 @@ struct Args {
 
 type PeerRegistry = Arc<RwLock<HashMap<String, String>>>;
 
-fn parse_bootstrap(s: &str) -> Result<(SocketAddr, String)> {
+/// Parse a bootstrap string using Korium's own parser, with manual fallback
+/// for the `addr/identity` format used in the CLI banner.
+fn parse_bootstrap(s: &str) -> Result<(String, String)> {
+    if let Some((identity, addr)) = Node::parse_bootstrap_txt(s) {
+        return Ok((identity, addr));
+    }
     let parts: Vec<&str> = s.splitn(2, '/').collect();
     if parts.len() != 2 {
         anyhow::bail!("Invalid bootstrap format. Expected: <address>/<identity_hex>");
     }
-    let addr: SocketAddr = parts[0]
-        .parse()
-        .with_context(|| format!("Invalid socket address: {}", parts[0]))?;
+    let addr = parts[0].to_string();
     let identity = parts[1].to_string();
-    if identity.len() != 64 {
-        anyhow::bail!("Identity must be 64 hex characters");
+    if identity.len() != MAX_IDENTITY_LENGTH {
+        anyhow::bail!("Identity must be {} hex characters", MAX_IDENTITY_LENGTH);
     }
-    hex::decode(&identity).with_context(|| "Identity must be valid hex")?;
-    Ok((addr, identity))
+    hex::decode(&identity).context("Identity must be valid hex")?;
+    Ok((identity, addr))
 }
 
 fn print_banner(args: &Args, display_addr: &str, identity: &str) {
@@ -283,18 +283,17 @@ fn print_banner(args: &Args, display_addr: &str, identity: &str) {
 fn print_help() {
     println!();
     println!("Commands:");
-    println!("  /dm <identity> <message>  - Send direct message (JSON protocol)");
+    println!("  /dm <identity> <message>  - Send direct message");
     println!("  /contact <identity>       - Send contact request");
-    println!("  /peers                    - List known peers from room messages");
-    println!("  /fabric                   - Show all peers in fabric (connection state)");
+    println!("  /peers                    - List peers discovered via room messages");
+    println!("  /fabric                   - Show fabric peers (connection state)");
     println!("  /routing                  - Show DHT routing table");
     println!("  /dht                      - Show DHT store entries");
-    println!("  /telemetry                - Show node statistics");
+    println!("  /telemetry                - Show node telemetry");
     println!("  /help                     - Show this help");
     println!("  /quit                     - Exit");
     println!();
-    println!("Type anything else to broadcast to the room.");
-    println!("Messages use Six7 Protocol v1.3 (JSON format).");
+    println!("Anything else is broadcast to the room (Protocol v1.3).");
     println!();
 }
 
@@ -311,7 +310,7 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    // Bind node to address (includes PoW mining which takes time)
+    // Build node (includes PoW identity mining)
     let bind_addr = format!("0.0.0.0:{}", args.port);
     
     print!("Mining identity (PoW)... ");
@@ -332,23 +331,23 @@ async fn main() -> Result<()> {
 
     print_banner(&args, &display_addr, &identity);
 
-    // Handle bootstrapping
+    // Bootstrap
     if args.public {
         println!("\nBootstrapping from public Korium network...");
         match node.bootstrap_public().await {
             Ok(()) => println!("Bootstrap successful!"),
             Err(e) => eprintln!("Bootstrap failed: {e}"),
         }
-    } else if let Some(bootstrap_str) = &args.bootstrap {
-        let (addr, peer_identity) = parse_bootstrap(bootstrap_str)?;
+    } else if let Some(ref bootstrap_str) = args.bootstrap {
+        let (peer_identity, addr) = parse_bootstrap(bootstrap_str)?;
         println!("\nBootstrapping from {addr}...");
-        match node.bootstrap(&peer_identity, &[addr.to_string()]).await {
+        match node.bootstrap(&peer_identity, &[addr]).await {
             Ok(()) => println!("Bootstrap successful!"),
             Err(e) => eprintln!("Bootstrap failed: {e}"),
         }
     } else {
-        println!("\nNo bootstrap peer specified. This node will be the first in the network.");
-        println!("Other nodes can connect using the bootstrap string above.");
+        println!("\nNo bootstrap peer specified. This node is the first in the network.");
+        println!("Others can connect using the bootstrap string above.");
     }
 
     // Subscribe to room topic
@@ -364,65 +363,63 @@ async fn main() -> Result<()> {
     let my_identity = identity.clone();
     let peers_for_pubsub = peers.clone();
 
-    // Spawn PubSub message handler
+    // PubSub handler
     tokio::spawn(async move {
         while let Some(msg) = pubsub_rx.recv().await {
-            if msg.topic == format!("chat/{room_filter}") {
-                let sender_id = &msg.from;
-
-                // Skip our own messages
-                if sender_id == &my_identity {
-                    continue;
-                }
-
-                // Try to parse as JSON GroupMessage first, fall back to legacy format
-                // Note: sender_id comes from Korium's authenticated transport, not the message payload
-                let (sender_name, display_content) = match serde_json::from_slice::<GroupMessage>(&msg.data) {
-                    Ok(group_msg) => {
-                        // JSON protocol message - use Korium-authenticated sender_id
-                        let name = {
-                            let peers = peers_for_pubsub.read().await;
-                            peers.get(&sender_id[..8]).cloned()
-                        }.unwrap_or_else(|| sender_id.clone());
-                        (name.clone(), format!("{}@{}: {}", name, sender_id, group_msg.content))
-                    }
-                    Err(_) => {
-                        // Legacy format: "name@id_prefix: message"
-                        let text = String::from_utf8_lossy(&msg.data);
-                        let sender_name = text
-                            .split_once(": ")
-                            .and_then(|(name_id, _)| name_id.split_once('@'))
-                            .map(|(name, _)| name.to_string())
-                            .unwrap_or_else(|| sender_id.clone());
-                        (sender_name, text.to_string())
-                    }
-                };
-
-                // Track peer
-                let id_prefix = &sender_id[..8];
-                let needs_insert = {
-                    let peers = peers_for_pubsub.read().await;
-                    !peers.contains_key(id_prefix)
-                };
-                if needs_insert {
-                    let mut peers = peers_for_pubsub.write().await;
-                    peers
-                        .entry(id_prefix.to_string())
-                        .or_insert_with(|| sender_name.clone());
-                }
-
-                println!("\x1b[32m[room]\x1b[0m {display_content}");
+            if msg.topic != format!("chat/{room_filter}") {
+                continue;
             }
+
+            let sender_id = &msg.from;
+            if sender_id == &my_identity {
+                continue;
+            }
+
+            let id_prefix = &sender_id[..8];
+
+            let (sender_name, display_content) = match serde_json::from_slice::<GroupMessage>(&msg.data) {
+                Ok(group_msg) => {
+                    let name = {
+                        let peers = peers_for_pubsub.read().await;
+                        peers.get(id_prefix).cloned()
+                    }
+                    .unwrap_or_else(|| id_prefix.to_string());
+                    (
+                        name.clone(),
+                        format!("{}@{}: {}", name, id_prefix, group_msg.content),
+                    )
+                }
+                Err(_) => {
+                    // Legacy plain-text fallback
+                    let text = String::from_utf8_lossy(&msg.data);
+                    let sender_name = text
+                        .split_once(": ")
+                        .and_then(|(prefix, _)| prefix.split_once('@'))
+                        .map(|(name, _)| name.to_string())
+                        .unwrap_or_else(|| id_prefix.to_string());
+                    (sender_name, text.to_string())
+                }
+            };
+
+            // Track peer
+            {
+                let mut peers = peers_for_pubsub.write().await;
+                peers
+                    .entry(id_prefix.to_string())
+                    .or_insert_with(|| sender_name.clone());
+            }
+
+            println!("\x1b[32m[room]\x1b[0m {display_content}");
         }
     });
 
-    // Spawn DM handler
+    // DM handler
     tokio::spawn(async move {
         while let Some((from, data, response_tx)) = dm_rx.recv().await {
-            // Try to parse as JSON DirectMessage
+            let from_short = &from[..8.min(from.len())];
             match serde_json::from_slice::<DirectMessage>(&data) {
                 Ok(dm) => {
-                    let type_indicator = match dm.message_type.as_str() {
+                    let tag = match dm.message_type.as_str() {
                         "text" => "",
                         "contactRequest" => " [contact request]",
                         "contactAccepted" => " [contact accepted]",
@@ -431,25 +428,17 @@ async fn main() -> Result<()> {
                         "vibe" => " [vibe]",
                         "profileUpdate" => " [profile update]",
                         other => {
-                            println!("\x1b[35m[dm ← {}]\x1b[0m [{}] {}", from, other, dm.content);
+                            println!("\x1b[35m[dm ← {}]\x1b[0m [{}] {}", from_short, other, dm.content);
                             let _ = response_tx.send(AckResponse::success().to_bytes());
                             continue;
                         }
                     };
-                    println!(
-                        "\x1b[35m[dm ← {}]\x1b[0m{} {}",
-                        from,
-                        type_indicator,
-                        dm.content
-                    );
-                    // Send JSON ACK response per protocol
+                    println!("\x1b[35m[dm ← {}]\x1b[0m{} {}", from_short, tag, dm.content);
                     let _ = response_tx.send(AckResponse::success().to_bytes());
                 }
                 Err(_) => {
-                    // Legacy format - plain text
                     let text = String::from_utf8_lossy(&data);
-                    println!("\x1b[35m[dm ← {}]\x1b[0m {}", from, text);
-                    // Send legacy acknowledgment for backward compatibility
+                    println!("\x1b[35m[dm ← {}]\x1b[0m {}", from_short, text);
                     let _ = response_tx.send(b"received".to_vec());
                 }
             }
@@ -463,247 +452,183 @@ async fn main() -> Result<()> {
 
     while let Some(line) = stdin_reader.next_line().await? {
         let line = line.trim();
-
         if line.is_empty() {
             continue;
         }
 
-        if line == "/quit" {
-            println!("Goodbye!");
-            break;
-        }
-
-        if line == "/help" {
-            print_help();
-            continue;
-        }
-
-        if line == "/peers" {
-            let peers_guard = peers.read().await;
-            if peers_guard.is_empty() {
-                println!("No peers discovered yet. Send messages to the room to discover peers.");
-            } else {
-                println!("Known peers:");
-                for (id_prefix, name) in peers_guard.iter() {
-                    println!("  {name} ({id_prefix})");
+        match line {
+            "/quit" => {
+                println!("Goodbye!");
+                break;
+            }
+            "/help" => {
+                print_help();
+            }
+            "/peers" => {
+                let guard = peers.read().await;
+                if guard.is_empty() {
+                    println!("No peers discovered yet.");
+                } else {
+                    println!("Known peers:");
+                    for (id_prefix, name) in guard.iter() {
+                        println!("  {name} ({id_prefix})");
+                    }
                 }
             }
-            continue;
-        }
-
-        if line == "/routing" {
-            let contacts = node.get_peers().await;
-            if contacts.is_empty() {
-                println!("Routing table is empty.");
-            } else {
-                println!("Routing table ({} contacts):", contacts.len());
-                for contact in contacts {
-                    let id_hex = hex::encode(contact.identity.as_bytes());
-                    println!("  {} -> {:?}", id_hex, contact.addrs);
+            "/routing" => {
+                let contacts = node.get_peers().await;
+                if contacts.is_empty() {
+                    println!("Routing table is empty.");
+                } else {
+                    println!("Routing table ({} contacts):", contacts.len());
+                    for c in &contacts {
+                        let id_hex = hex::encode(c.identity.as_bytes());
+                        println!("  {} -> {:?}", id_hex, c.addrs);
+                    }
                 }
             }
-            continue;
-        }
-
-        if line == "/fabric" {
-            let all_contacts = node.all_contacts();
-            let connected_contacts = node.connected_contacts();
-            if all_contacts.is_empty() {
-                println!("Fabric is empty (no known peers).");
-            } else {
-                println!(
-                    "Fabric ({} peers, {} connected):",
-                    all_contacts.len(),
-                    connected_contacts.len()
-                );
-                let connected_ids: std::collections::HashSet<_> = connected_contacts
-                    .iter()
-                    .map(|c| hex::encode(c.identity.as_bytes()))
-                    .collect();
-                for contact in all_contacts {
-                    let id_hex = hex::encode(contact.identity.as_bytes());
-                    let status = if connected_ids.contains(&id_hex) {
-                        "\x1b[32mconnected\x1b[0m"
-                    } else {
-                        "\x1b[31mdisconnected\x1b[0m"
-                    };
-                    println!("  {} [{}] {:?}", id_hex, status, contact.addrs);
+            "/fabric" => {
+                let all = node.all_contacts().await;
+                let connected = node.connected_contacts().await;
+                if all.is_empty() {
+                    println!("Fabric is empty (no known peers).");
+                } else {
+                    println!("Fabric ({} peers, {} connected):", all.len(), connected.len());
+                    let connected_ids: std::collections::HashSet<_> = connected
+                        .iter()
+                        .map(|c| hex::encode(c.identity.as_bytes()))
+                        .collect();
+                    for c in &all {
+                        let id_hex = hex::encode(c.identity.as_bytes());
+                        let status = if connected_ids.contains(&id_hex) {
+                            "\x1b[32mconnected\x1b[0m"
+                        } else {
+                            "\x1b[31mdisconnected\x1b[0m"
+                        };
+                        println!("  {} [{}] {:?}", id_hex, status, c.addrs);
+                    }
                 }
             }
-            continue;
-        }
-
-        if line == "/telemetry" {
-            let t = node.telemetry().await;
-            println!("╔════════════════════════════════════════════════════════════════╗");
-            println!("║                         Telemetry                              ║");
-            println!("╠════════════════════════════════════════════════════════════════╣");
-            println!(
-                "║ DHT Store        : {:>6} keys                                 ║",
-                t.stored_keys
-            );
-            println!(
-                "║ DHT Pressure     : {:>6.2}                                      ║",
-                t.pressure
-            );
-            println!(
-                "║ Routing Peers    : {:>6}                                       ║",
-                t.connected_peers
-            );
-            println!(
-                "║ GossipSub Mesh   : {:>6} peers                                 ║",
-                t.gossipsub_mesh_peers
-            );
-            println!(
-                "║ GossipSub Topics : {:>6}                                       ║",
-                t.gossipsub_topics
-            );
-            println!(
-                "║ RPC Sent         : {:>6}                                       ║",
-                t.rpc_requests_sent
-            );
-            println!(
-                "║ RPC Received     : {:>6}                                       ║",
-                t.rpc_requests_received
-            );
-            println!(
-                "║ RPC Errors       : {:>6}                                       ║",
-                t.rpc_errors
-            );
-            println!(
-                "║ Connections      : {:>6} cached                                ║",
-                t.rpc_connections_cached
-            );
-            println!(
-                "║ Relay Packets    : {:>6}                                       ║",
-                t.relay_packets_relayed
-            );
-            println!("╚════════════════════════════════════════════════════════════════╝");
-            continue;
-        }
-
-        if line == "/dht" {
-            let entries = node.list_dht_store().await;
-            if entries.is_empty() {
-                println!("DHT store is empty.");
-            } else {
-                println!("DHT store ({} entries):", entries.len());
-                for (key, value_len, stored_by) in entries {
-                    println!(
-                        "  {} ({} bytes, by {})",
-                        key,
-                        value_len,
-                        stored_by
-                    );
+            "/telemetry" => {
+                let t = node.telemetry().await;
+                println!("╔════════════════════════════════════════════════════════════════╗");
+                println!("║                         Telemetry                              ║");
+                println!("╠════════════════════════════════════════════════════════════════╣");
+                println!("║ DHT Store        : {:>6} keys                                 ║", t.stored_keys);
+                println!("║ DHT Replication  : {:>6}                                       ║", t.replication_factor);
+                println!("║ DHT Concurrency  : {:>6}                                       ║", t.concurrency);
+                println!("║ DHT Pressure     : {:>6.2}                                      ║", t.pressure);
+                println!("║ Routing Peers    : {:>6}                                       ║", t.connected_peers);
+                println!("║ GossipSub Mesh   : {:>6} peers                                 ║", t.gossipsub_mesh_peers);
+                println!("║ GossipSub Topics : {:>6}                                       ║", t.gossipsub_topics);
+                println!("║ Transport Sent   : {:>6}                                       ║", t.transport_requests_sent);
+                println!("║ Transport Recv   : {:>6}                                       ║", t.transport_requests_received);
+                println!("║ Transport OK     : {:>6}                                       ║", t.transport_responses_success);
+                println!("║ Transport Errors : {:>6}                                       ║", t.transport_errors);
+                println!("║ Connections      : {:>6} cached                                ║", t.transport_connections_cached);
+                println!("║ Connections Est. : {:>6}                                       ║", t.transport_connections_established);
+                if !t.tier_centroids.is_empty() {
+                    let tiers: Vec<String> = t
+                        .tier_centroids
+                        .iter()
+                        .zip(t.tier_counts.iter())
+                        .map(|(c, n)| format!("{:.0}ms({})", c, n))
+                        .collect();
+                    println!("║ Latency Tiers    : {:<45} ║", tiers.join(", "));
+                }
+                println!("╚════════════════════════════════════════════════════════════════╝");
+            }
+            "/dht" => {
+                let entries = node.list_dht_store().await;
+                if entries.is_empty() {
+                    println!("DHT store is empty.");
+                } else {
+                    println!("DHT store ({} entries):", entries.len());
+                    for (key, value_len, stored_by) in &entries {
+                        println!("  {} ({} bytes, by {})", key, value_len, stored_by);
+                    }
                 }
             }
-            continue;
-        }
-
-        if line.starts_with("/dm ") {
-            let parts: Vec<&str> = line.splitn(3, ' ').collect();
-            if parts.len() < 3 {
-                println!("Usage: /dm <identity_hex> <message>");
-                println!("Example: /dm 5821a288e16c6491abcdef1234567890abcdef1234567890abcdef12345678 Hello!");
-                continue;
-            }
-
-            let peer_identity = parts[1];
-            let message = parts[2];
-
-            if peer_identity.len() != 64 || hex::decode(peer_identity).is_err() {
-                println!("Invalid identity. Must be 64 hex characters.");
-                continue;
-            }
-
-            // Create JSON DirectMessage per protocol
-            let dm = DirectMessage::text(message);
-            let dm_payload = serde_json::to_vec(&dm).expect("Failed to serialize message");
-
-            match tokio::time::timeout(Duration::from_secs(10), node.send(peer_identity, dm_payload)).await {
-                Ok(Ok(response)) => {
-                    // Try to parse JSON ACK response
-                    let ack_status = match serde_json::from_slice::<AckResponse>(&response) {
-                        Ok(ack) if ack.ack => "✓",
-                        _ => {
-                            let text = String::from_utf8_lossy(&response);
-                            if text == "received" { "✓" } else { "?" }
-                        }
-                    };
-                    println!(
-                        "\x1b[33m[dm → {}]\x1b[0m {} [{}]",
-                        peer_identity,
-                        message,
-                        ack_status
-                    );
+            _ if line.starts_with("/dm ") => {
+                let parts: Vec<&str> = line.splitn(3, ' ').collect();
+                if parts.len() < 3 {
+                    println!("Usage: /dm <identity_hex> <message>");
+                    continue;
                 }
-                Ok(Err(e)) => {
-                    eprintln!("\x1b[31m[dm error]\x1b[0m Failed to send: {e}");
+
+                let peer_identity = parts[1];
+                let message = parts[2];
+
+                if peer_identity.len() != MAX_IDENTITY_LENGTH || hex::decode(peer_identity).is_err() {
+                    println!("Invalid identity. Must be {} hex characters.", MAX_IDENTITY_LENGTH);
+                    continue;
                 }
-                Err(_) => {
-                    eprintln!("\x1b[31m[dm error]\x1b[0m Timeout: peer unreachable");
+
+                let dm = DirectMessage::text(message);
+                let payload = serde_json::to_vec(&dm).expect("Failed to serialize message");
+
+                match tokio::time::timeout(Duration::from_secs(10), node.send(peer_identity, payload)).await {
+                    Ok(Ok(response)) => {
+                        let ack = match serde_json::from_slice::<AckResponse>(&response) {
+                            Ok(a) if a.ack => "✓",
+                            _ => {
+                                if String::from_utf8_lossy(&response) == "received" {
+                                    "✓"
+                                } else {
+                                    "?"
+                                }
+                            }
+                        };
+                        println!("\x1b[33m[dm → {}]\x1b[0m {} [{}]", &peer_identity[..8], message, ack);
+                    }
+                    Ok(Err(e)) => eprintln!("\x1b[31m[dm error]\x1b[0m Failed to send: {e}"),
+                    Err(_) => eprintln!("\x1b[31m[dm error]\x1b[0m Timeout: peer unreachable"),
                 }
             }
-            continue;
-        }
-
-        // Contact request command
-        if line.starts_with("/contact ") {
-            let parts: Vec<&str> = line.splitn(2, ' ').collect();
-            if parts.len() < 2 {
-                println!("Usage: /contact <identity_hex>");
-                println!("Example: /contact 5821a288e16c6491abcdef1234567890abcdef1234567890abcdef12345678");
-                continue;
-            }
-
-            let peer_identity = parts[1];
-
-            if peer_identity.len() != 64 || hex::decode(peer_identity).is_err() {
-                println!("Invalid identity. Must be 64 hex characters.");
-                continue;
-            }
-
-            // Create JSON ContactRequest per protocol
-            let request = DirectMessage::contact_request(&args.name);
-            let payload = serde_json::to_vec(&request).expect("Failed to serialize contact request");
-
-            match tokio::time::timeout(Duration::from_secs(10), node.send(peer_identity, payload)).await {
-                Ok(Ok(response)) => {
-                    let ack_status = match serde_json::from_slice::<AckResponse>(&response) {
-                        Ok(ack) if ack.ack => "sent",
-                        _ => "sent (legacy peer)",
-                    };
-                    println!(
-                        "\x1b[36m[contact request → {}]\x1b[0m {} [{}]",
-                        peer_identity,
-                        args.name,
-                        ack_status
-                    );
+            _ if line.starts_with("/contact ") => {
+                let parts: Vec<&str> = line.splitn(2, ' ').collect();
+                if parts.len() < 2 {
+                    println!("Usage: /contact <identity_hex>");
+                    continue;
                 }
-                Ok(Err(e)) => {
-                    eprintln!("\x1b[31m[contact error]\x1b[0m Failed to send request: {e}");
+
+                let peer_identity = parts[1];
+
+                if peer_identity.len() != MAX_IDENTITY_LENGTH || hex::decode(peer_identity).is_err() {
+                    println!("Invalid identity. Must be {} hex characters.", MAX_IDENTITY_LENGTH);
+                    continue;
                 }
-                Err(_) => {
-                    eprintln!("\x1b[31m[contact error]\x1b[0m Timeout: peer unreachable");
+
+                let req = DirectMessage::contact_request(&args.name);
+                let payload = serde_json::to_vec(&req).expect("Failed to serialize contact request");
+
+                match tokio::time::timeout(Duration::from_secs(10), node.send(peer_identity, payload)).await {
+                    Ok(Ok(response)) => {
+                        let status = match serde_json::from_slice::<AckResponse>(&response) {
+                            Ok(a) if a.ack => "sent",
+                            _ => "sent (legacy peer)",
+                        };
+                        println!("\x1b[36m[contact → {}]\x1b[0m {} [{}]", &peer_identity[..8], args.name, status);
+                    }
+                    Ok(Err(e)) => eprintln!("\x1b[31m[contact error]\x1b[0m Failed to send: {e}"),
+                    Err(_) => eprintln!("\x1b[31m[contact error]\x1b[0m Timeout: peer unreachable"),
                 }
             }
-            continue;
-        }
+            _ if line.starts_with('/') => {
+                println!("Unknown command. Type /help for available commands.");
+            }
+            _ => {
+                // Broadcast to room
+                let group_msg = GroupMessage::text(line, &args.room);
+                let payload = serde_json::to_vec(&group_msg).expect("Failed to serialize message");
+                let formatted = format!("{}@{}: {}", args.name, &identity[..8], line);
 
-        // Regular message - broadcast to room using JSON GroupMessage format
-        // Note: For the chatroom, we use the room name as group_id for simplicity
-        // Sender identity is authenticated by Korium at the transport layer
-        let group_msg = GroupMessage::text(line, &args.room);
-        let json_payload = serde_json::to_vec(&group_msg).expect("Failed to serialize message");
-        let formatted = format!("{}@{}: {}", args.name, identity, line);
-
-        if let Err(e) = node
-            .publish(&room_topic, json_payload)
-            .await
-        {
-            eprintln!("Failed to send message: {e}");
-        } else {
-            println!("\x1b[32m[room]\x1b[0m {formatted}");
+                if let Err(e) = node.publish(&room_topic, payload).await {
+                    eprintln!("Failed to send message: {e}");
+                } else {
+                    println!("\x1b[32m[room]\x1b[0m {formatted}");
+                }
+            }
         }
     }
 
