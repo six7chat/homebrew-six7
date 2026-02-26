@@ -39,40 +39,38 @@ cargo install --git https://github.com/six7chat/homebrew-six7.git
 ### Start a New Chatroom
 
 ```bash
-# Start a node (first peer in the network)
+# Start a node (bootstraps from public Korium network by default)
 six7 --name Alice --room dev
 ```
 
 This will display your bootstrap string that others can use to join:
 
 ```
-╔════════════════════════════════════════════════════════════════╗
-║                     six7 Chatroom                              ║
-╠════════════════════════════════════════════════════════════════╣
-║ Nickname : Alice                                               ║
-║ Room     : dev                                                 ║
-║ Address  : 192.168.1.100:4433                                  ║
-╠════════════════════════════════════════════════════════════════╣
-║ Your Identity (for DMs):                                       ║
-║ abc123def456...                                                ║
-╠════════════════════════════════════════════════════════════════╣
-║ Bootstrap string (copy this line):                             ║
-╚════════════════════════════════════════════════════════════════╝
+six7
+
+Nickname : Alice
+Room     : dev
+Address  : 192.168.1.100:4433
+
+Your Identity (for DMs):
+abc123def456...
+
+Bootstrap string (copy this line):
 192.168.1.100:4433/abc123def456...
 ```
 
-### Join an Existing Chatroom
+### Join via a Specific Peer
 
 ```bash
 # Join using bootstrap string from another peer
-six7 --name Bob --room dev --bootstrap "192.168.1.100:4433/abc123def456..."
+six7 --name Bob --room dev --join "192.168.1.100:4433/abc123def456..."
 ```
 
-### Join Public Korium Network
+### Start a Standalone Network
 
 ```bash
-# Bootstrap from public Korium network nodes
-six7 --name Charlie --room dev --public
+# Skip public bootstrap, start as the first node in a private network
+six7 --name Charlie --room dev --standalone
 ```
 
 ## Commands
@@ -80,10 +78,9 @@ six7 --name Charlie --room dev --public
 | Command | Description |
 |---------|-------------|
 | `/dm <identity> <message>` | Send a direct message to a peer |
+| `/contact <identity>` | Send a contact request |
 | `/peers` | List known peers from room messages |
-| `/fabric` | Show all peers in fabric (connection state) |
-| `/routing` | Show DHT routing table |
-| `/dht` | Show DHT store entries |
+| `/list` | Show all peer tables (fabric/transport/routing/gossipsub/dht) |
 | `/telemetry` | Show node statistics |
 | `/help` | Show available commands |
 | `/quit` | Exit the chatroom |
@@ -95,8 +92,8 @@ Options:
   -n, --name <NAME>        Your display name [default: anon]
   -r, --room <ROOM>        Room to join [default: lobby]
   -p, --port <PORT>        Port to bind to (0 for random) [default: 0]
-  -B, --bootstrap <ADDR>   Bootstrap peer address in format: <address>/<identity_hex>
-  -P, --public             Bootstrap using public Korium network nodes
+  -j, --join <ADDR>        Join a specific peer: <address>/<identity_hex>
+  -S, --standalone         Start standalone (skip public bootstrap)
   -d, --debug              Enable debug logging
   -h, --help               Print help
   -V, --version            Print version
@@ -107,14 +104,14 @@ Options:
 ### Private Network Chat
 
 ```bash
-# Terminal 1: Alice starts the chatroom
-six7 --name Alice --room team-standup
+# Terminal 1: Alice starts a standalone chatroom
+six7 --name Alice --room team-standup --standalone
 
 # Terminal 2: Bob joins (copy bootstrap string from Alice)
-six7 --name Bob --room team-standup --bootstrap "192.168.1.100:45123/abc123..."
+six7 --name Bob --room team-standup --join "192.168.1.100:45123/abc123..."
 
 # Terminal 3: Charlie joins
-six7 --name Charlie --room team-standup --bootstrap "192.168.1.100:45123/abc123..."
+six7 --name Charlie --room team-standup --join "192.168.1.100:45123/abc123..."
 ```
 
 ### Direct Messaging
@@ -130,11 +127,8 @@ six7 --name Charlie --room team-standup --bootstrap "192.168.1.100:45123/abc123.
 # View detailed node statistics
 /telemetry
 
-# See connected peers
-/fabric
-
-# View DHT routing table
-/routing
+# See all peer tables
+/list
 ```
 
 ## Architecture
