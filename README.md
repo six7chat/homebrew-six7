@@ -39,7 +39,7 @@ cargo install --git https://github.com/six7chat/homebrew-six7.git
 ### Start a New Chatroom
 
 ```bash
-# Start a node (bootstraps from public Korium network by default)
+# Start a node (first peer in the network)
 six7 --name Alice --room dev
 ```
 
@@ -66,11 +66,11 @@ Bootstrap string (copy this line):
 six7 --name Bob --room dev --join "192.168.1.100:4433/abc123def456..."
 ```
 
-### Start a Standalone Network
+### Join Public Korium Network
 
 ```bash
-# Skip public bootstrap, start as the first node in a private network
-six7 --name Charlie --room dev --standalone
+# Bootstrap from public Korium network nodes
+six7 --name Charlie --room dev --bootstrap
 ```
 
 ## Commands
@@ -93,7 +93,7 @@ Options:
   -r, --room <ROOM>        Room to join [default: lobby]
   -p, --port <PORT>        Port to bind to (0 for random) [default: 0]
   -j, --join <ADDR>        Join a specific peer: <address>/<identity_hex>
-  -S, --standalone         Start standalone (skip public bootstrap)
+  -B, --bootstrap          Bootstrap from public Korium network
   -d, --debug              Enable debug logging
   -h, --help               Print help
   -V, --version            Print version
@@ -104,8 +104,8 @@ Options:
 ### Private Network Chat
 
 ```bash
-# Terminal 1: Alice starts a standalone chatroom
-six7 --name Alice --room team-standup --standalone
+# Terminal 1: Alice starts the chatroom
+six7 --name Alice --room team-standup
 
 # Terminal 2: Bob joins (copy bootstrap string from Alice)
 six7 --name Bob --room team-standup --join "192.168.1.100:45123/abc123..."

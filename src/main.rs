@@ -244,9 +244,9 @@ struct Args {
     #[arg(short = 'j', long = "join")]
     join: Option<String>,
 
-    /// Start standalone (skip public bootstrap)
-    #[arg(short = 'S', long = "standalone")]
-    standalone: bool,
+    /// Bootstrap from public Korium network
+    #[arg(short = 'B', long = "bootstrap")]
+    bootstrap: bool,
 
     /// Enable debug logging
     #[arg(short = 'd', long = "debug")]
@@ -346,15 +346,15 @@ async fn main() -> Result<()> {
             Ok(()) => println!("Joined successfully!"),
             Err(e) => eprintln!("Join failed: {e}"),
         }
-    } else if args.standalone {
-        println!("\nStandalone mode. This node is the first in the network.");
-        println!("Others can connect using the bootstrap string above.");
-    } else {
+    } else if args.bootstrap {
         println!("\nBootstrapping from public Korium network...");
         match node.bootstrap().await {
             Ok(()) => println!("Bootstrap successful!"),
             Err(e) => eprintln!("Bootstrap failed: {e}"),
         }
+    } else {
+        println!("\nNo bootstrap peer specified. This node is the first in the network.");
+        println!("Others can connect using the bootstrap string above.");
     }
 
     // Subscribe to room topic
