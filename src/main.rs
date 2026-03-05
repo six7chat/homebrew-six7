@@ -565,7 +565,7 @@ async fn main() -> Result<()> {
                             Some(d) => format!("{:.1}ms", d.as_secs_f64() * 1000.0),
                             None => "—".to_string(),
                         };
-                        println!("  {}..  rtt={:<10}  vaddr={}", short, rtt_str, addr);
+                        println!("  {}..  rtt={:<10}  addr={}", short, rtt_str, addr);
                     }
                 }
 
